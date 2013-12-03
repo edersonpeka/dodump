@@ -31,6 +31,7 @@ $msgret = '';
 $WP_CONFIG = posted( 'ddConfigPath', 'wp-config.php' );
 $DUMPFILE = posted( 'ddDumpFile', 'dumpfile.sql' );
 $DOMAIN = posted( 'ddDomain', '' );
+$PACK = posted( 'ddPack', 0 );
 $SITEURL = '';
     
 $acao = posted( 'acao' );
@@ -43,9 +44,15 @@ if ( $acao ) {
     if ( 'wp-config.php' == $WP_CONFIG && !file_exists( $WP_CONFIG ) ) {
         $WP_CONFIG = 'wordpress/wp-config.php';
         if ( !file_exists( $WP_CONFIG ) ) $WP_CONFIG = 'www/wp-config.php';
+        if ( !file_exists( $WP_CONFIG ) ) $WP_CONFIG = 'public_html/wp-config.php';
         if ( !file_exists( $WP_CONFIG ) ) $WP_CONFIG = '../wordpress/wp-config.php';
         if ( !file_exists( $WP_CONFIG ) ) $WP_CONFIG = '../www/wp-config.php';
+        if ( !file_exists( $WP_CONFIG ) ) $WP_CONFIG = '../public_html/wp-config.php';
     }
+
+    $arrwpcontent = explode( '/', $WP_CONFIG );
+    $arrwpcontent[ count( $arrwpcontent ) - 1 ] = 'wp-content';
+    $WP_CONTENT = implode( '/', $arrwpcontent );
     
     if ( !trim( $WP_CONFIG ) ) {
 
@@ -80,13 +87,34 @@ if ( $acao ) {
 
                 if ( __( $ddstr['dump'] ) == $acao ) {
 
-                    if ( !file_exists( $DUMPFILE ) && !touch( $DUMPFILE ) ) {
+                    if ( !file_exists( $DUMPFILE ) && !@touch( $DUMPFILE ) ) {
                         $msgret = 'Could not create dump file <strong>(' . $DUMPFILE . ').</strong>|error';
                     } elseif ( is_writable( $DUMPFILE ) ) {
             			$theDump = _mysqldump( $dbName );
             			$theDump = str_replace( array( $SITEURL, $DOMAIN ), array( '[[INSERT-SITEURL-HERE]]', '[[INSERT-DOMAIN-HERE]]' ), $theDump );
             			if ( file_put_contents( $DUMPFILE, $theDump ) ) {
-                            $msgret = 'Dump written to file <strong>' . $DUMPFILE . '.</strong>|success';
+                            $msgret = 'Dump written to <strong>' . $DUMPFILE . '</strong> file.|success';
+                            if ( $PACK ) {
+                                $arrlogfile = explode( '/', $DUMPFILE );
+                                $arrlogfile[ count( $arrlogfile ) - 1 ] = 'dumpfile.log';
+                                $DUMPFILELOG = implode( '/', $arrlogfile );
+                                if ( !file_exists( $DUMPFILELOG ) && !@touch( $DUMPFILELOG ) ) $DUMPFILELOG = '/dev/null';
+                                $PACK_CMD = 'tar -cvzf dumpfile.tgz ' . $DUMPFILE . ' ';
+                                if ( $PACK > 1 ) {
+                                    if ( !file_exists( $WP_CONTENT ) ) {
+                                        $WP_CONTENT = 'wordpress/wp-content';
+                                        if ( !file_exists( $WP_CONTENT ) ) $WP_CONTENT = 'www/wp-content';
+                                        if ( !file_exists( $WP_CONTENT ) ) $WP_CONTENT = 'public_html/wp-content';
+                                        if ( !file_exists( $WP_CONTENT ) ) $WP_CONTENT = '../wordpress/wp-content';
+                                        if ( !file_exists( $WP_CONTENT ) ) $WP_CONTENT = '../www/wp-content';
+                                        if ( !file_exists( $WP_CONTENT ) ) $WP_CONTENT = '../public_html/wp-content';
+                                    }
+                                    $PACK_CMD .= $WP_CONTENT . '/uploads ';
+                                    if ( $PACK > 2 ) $PACK_CMD .= $WP_CONTENT . '/themes ' . $WP_CONTENT . '/plugins ';
+                                }
+                                shell_exec( $PACK_CMD . ' > ' . $DUMPFILELOG . ' 2>/dev/null &' );
+                                $msgret = 'Dump written to <strong>' . $DUMPFILE . '</strong> file. Also, a background process must be creating a <strong>dumpfile.tgz</strong> file right now!|success';
+                            }
             			} else {
                             $msgret = 'Error writing dump file <strong>(' . $DUMPFILE . ').</strong>|error';
             			}
@@ -125,11 +153,13 @@ if ( $acao ) {
 
 }
 
+header('Content-Type: text/html; charset=utf-8');
 ?>
 <html>
 <head>
+<meta http-equiv="Content-type" content="text/html; charset=utf-8" />
 <title>DO-DUMP!</title>
-<link rel="stylesheet" href="http://twitter.github.com/bootstrap/1.3.0/bootstrap.min.css" />
+<link rel="stylesheet" href="http://ederson.peka.nom.br/stuff/bootstrap.1.3.0.min.css" />
 </head>
 <body>
 
@@ -166,6 +196,22 @@ if ( $acao ) {
                   <input class="xlarge" id="ddDomain" name="ddDomain" size="30" type="text" placeholder="<?php _e( 'Default: autodetect' ); ?>" />
                 </div>
             </div>
+
+            <?php if ( '/' == DIRECTORY_SEPARATOR ) : // Windows não, mamãe! ?>
+
+                <div class="clearfix">
+                    <label for="ddPack"><?php _e( 'Compress:' ); ?></label>
+                    <div class="input">
+                      <select id="ddPack" name="ddPack">
+                        <option value="0"><?php _e( 'Do nothing' ); ?></option>
+                        <option value="1"><?php _e( 'Compress .sql file to "dumpfile.tgz" file' ); ?></option>
+                        <option value="2"><?php _e( 'Pack .sql file and "wp-content/uploads" folder in "dumpfile.tgz" file' ); ?></option>
+                        <option value="3"><?php _e( 'Pack .sql file and "wp-content/uploads", "wp-content/plugins" and "wp-content/themes" folders in "dumpfile.tgz" file' ); ?></option>
+                      </select>
+                    </div>
+                </div>
+
+            <?php endif; ?>
           
             <input type="submit" name="acao" value="<?php _e( $ddstr['test'] ); ?>" class="btn primary" />
             <input type="submit" name="acao" value="<?php _e( $ddstr['dump'] ); ?>" class="btn primary" />
@@ -185,8 +231,8 @@ if ( $acao ) {
 function php_conecta( $db_server, $db_user, $db_password, $db_database ) {
 	if ( ! $conexao = mysql_connect( $db_server, $db_user, $db_password ) ) return false;
 	if ( ! mysql_select_db( $db_database, $conexao ) ) return false;
-	/*
 	php_executa( "SET NAMES utf8" );
+	/*
 	php_executa( "SET SESSION TRANSACTION ISOLATION LEVEL READ UNCOMMITTED" );
 	*/
 	return $conexao;
